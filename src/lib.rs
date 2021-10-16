@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![cfg_attr(not(test), no_std)]
 
 /// Luhn algorithm calls for a sum of digits in odd and even places starting
 /// from the end of the stream with additional transmogrification applied to
@@ -17,7 +18,11 @@ impl Mixer {
             self.0.five_or_higher += 1;
         }
         self.0.sum += usize::from(digit);
-        std::mem::swap(&mut self.0, &mut self.1);
+
+        // swap blobs
+        let t = self.0;
+        self.0 = self.1;
+        self.1 = t;
     }
 
     fn valid(&self) -> bool {
@@ -30,7 +35,7 @@ impl Mixer {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 struct Blob {
     sum: usize,
     five_or_higher: usize,
