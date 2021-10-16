@@ -50,3 +50,13 @@ as credit card numbers or `IMEI` codes
 - `alphanum` operates on sequences composed of decimal numbers and capital latin letters, such
   as `ISIN` or `NSIN`
 
+## no_std
+
+Crate doesn't use `std`
+
+## Performance
+
+```ignore
+validate isin           time:   [20.908 ns 20.971 ns 21.040 ns]
+validate visa           time:   [17.241 ns 17.289 ns 17.341 ns]
+```
