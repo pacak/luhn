@@ -247,7 +247,7 @@ mod test {
     }
 
     #[test]
-    fn asdf() {
+    fn test_ae_checksum() {
         let (&check, body) = b"378282246310005".split_last().unwrap();
         assert_eq!(Some(check), crate::decimal::checksum(body));
     }
