@@ -40,6 +40,7 @@ impl Mixer {
     /// # Panics
     /// Function contains [debug_assert] to ensure correct input
     ///
+    #[inline(always)]
     pub fn push(&mut self, digit: u8) {
         debug_assert!(digit < 10);
         if digit >= 5 {
