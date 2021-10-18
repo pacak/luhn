@@ -1,6 +1,25 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(not(test), no_std)]
 
+/// Digit mixer for one symbol at a time consuming.
+///
+/// This structure allows to calculate Luhn chechsums for strings with additional formatting
+/// present without having to reallocate a formatting-less slice. See [`Mixer::push`] for more
+/// details.
+///
+/// # Examples
+/// ```rust
+///    use luhn3::Mixer;
+///    let input = "4111 1111 1111 1111";
+///    let mut m = Mixer::default();
+///    for c in input.as_bytes() {
+///        if (b'0'..=b'9').contains(c) {
+///            m.push(c - b'0');
+///        }
+///    }
+///    assert!(m.valid());
+/// ```
+///
 /// Luhn algorithm calls for a sum of digits in odd and even places starting
 /// from the end of the stream with additional transmogrification applied to
 /// digits on even (if calculating missing check digit) or odd (if checking the
@@ -8,12 +27,21 @@
 /// are defined in terms of the right most digit [`Mixer`] tries to keep
 /// enough information available to be able to perform the final calculation
 /// for both even and odd sized transmogrified strings.
-
 #[derive(Default)]
-struct Mixer(Blob, Blob);
+pub struct Mixer(Blob, Blob);
 
 impl Mixer {
-    fn push(&mut self, digit: u8) {
+    /// Add a new digit to current checksum computation
+    ///
+    /// Input must be decimal digit in `0..9` range inclusive so for `'1'` the correct
+    /// value to push is `1`.  For alphanumeric values two pushes are required: `'A'`
+    /// represents number `10` and should be pushed as `1` followed by `0`.
+    ///
+    /// # Panics
+    /// Function contains [debug_assert] to ensure correct input
+    ///
+    pub fn push(&mut self, digit: u8) {
+        debug_assert!(digit < 10);
         if digit >= 5 {
             self.0.five_or_higher += 1;
         }
@@ -25,11 +53,11 @@ impl Mixer {
         self.1 = t;
     }
 
-    fn valid(&self) -> bool {
+    pub fn valid(&self) -> bool {
         (self.0.sum * 2 - self.0.five_or_higher * 9 + self.1.sum) % 10 == 0
     }
 
-    fn checksum(&self) -> u8 {
+    pub fn checksum(&self) -> u8 {
         let checksum = self.1.sum * 2 - self.1.five_or_higher * 9 + self.0.sum;
         b'0' + ((10 - (checksum % 10)) % 10) as u8
     }
