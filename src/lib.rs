@@ -70,31 +70,57 @@ struct Blob {
     five_or_higher: usize,
 }
 
-fn fold_decimal(raw: &[u8]) -> Option<Mixer> {
-    let mut mixer = Mixer::default();
-    for c in raw.iter().copied() {
+fn fold10(mut correct: bool, raw: &[u8]) -> Option<usize> {
+    const LUT: [u8; 10] = [0, 1, 2, 3, 4, 6, 7, 8, 9, 0];
+    let mut acc = 0;
+    for c in raw.iter().copied().rev() {
         match c {
-            b'0'..=b'9' => mixer.push(c - b'0'),
-            _ => return None,
-        }
-    }
-    Some(mixer)
-}
-
-fn fold_base36(raw: &[u8]) -> Option<Mixer> {
-    let mut mixer = Mixer::default();
-    for c in raw.iter().copied() {
-        match c {
-            b'0'..=b'9' => mixer.push(c - b'0'),
-            b'A'..=b'Z' => {
-                let b36 = c - b'A' + 10;
-                mixer.push(b36 / 10);
-                mixer.push(b36 % 10);
+            b'0'..=b'9' => {
+                let digit = (c - b'0') as usize;
+                acc += digit;
+                if correct {
+                    acc += LUT[digit] as usize;
+                }
+                correct = !correct;
             }
             _ => return None,
         }
     }
-    Some(mixer)
+    Some(acc)
+}
+
+fn fold36(mut correct: bool, raw: &[u8]) -> Option<usize> {
+    const LUT_DIGIT: [u8; 10] = [0, 1, 2, 3, 4, 6, 7, 8, 9, 0];
+    const LUT_LETTER_T: [u8; 26] = [
+        1, 3, 5, 7, 9, 2, 4, 6, 8, 10, 2, 4, 6, 8, 10, 3, 5, 7, 9, 11, 3, 5, 7, 9, 11, 4,
+    ];
+    const LUT_LETTER_F: [u8; 26] = [
+        2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 6, 7, 8, 9, 10, 11,
+    ];
+    let mut acc = 0;
+
+    for c in raw.iter().copied().rev() {
+        match c {
+            b'0'..=b'9' => {
+                let digit = (c - b'0') as usize;
+                acc += digit;
+                if correct {
+                    acc += LUT_DIGIT[digit] as usize;
+                }
+                correct = !correct;
+            }
+            b'A'..=b'Z' => {
+                let letter = (c - b'A') as usize;
+                if correct {
+                    acc += LUT_LETTER_T[letter] as usize;
+                } else {
+                    acc += LUT_LETTER_F[letter] as usize;
+                }
+            }
+            _ => return None,
+        }
+    }
+    Some(acc)
 }
 
 pub mod decimal {
@@ -139,8 +165,8 @@ pub mod decimal {
     /// assert!(!valid(noms.as_bytes()));
     /// ```
     pub fn valid(ascii: &[u8]) -> bool {
-        match fold_decimal(ascii) {
-            Some(mixer) => mixer.valid(),
+        match fold10(false, ascii) {
+            Some(v) => v % 10 == 0,
             None => false,
         }
     }
@@ -168,7 +194,8 @@ pub mod decimal {
     /// assert_eq!(None, checksum(noms.as_bytes()));
     /// ```
     pub fn checksum(ascii: &[u8]) -> Option<u8> {
-        Some(fold_decimal(ascii)?.checksum())
+        let sum = fold10(true, ascii)?;
+        Some(b'0' + ((10 - (sum % 10)) % 10) as u8)
     }
 }
 
@@ -204,8 +231,8 @@ pub mod alphanum {
     /// assert!(!valid(noms.as_bytes()));
     /// ```
     pub fn valid(ascii: &[u8]) -> bool {
-        match fold_base36(ascii) {
-            Some(mixer) => mixer.valid(),
+        match fold36(false, ascii) {
+            Some(v) => v % 10 == 0,
             None => false,
         }
     }
@@ -232,7 +259,8 @@ pub mod alphanum {
     /// assert_eq!(None, checksum(noms.as_bytes()));
     /// ```
     pub fn checksum(ascii: &[u8]) -> Option<u8> {
-        Some(fold_base36(ascii)?.checksum())
+        let sum = fold36(true, ascii)?;
+        Some(b'0' + ((10 - (sum % 10)) % 10) as u8)
     }
 }
 

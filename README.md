@@ -57,6 +57,6 @@ Crate doesn't use `std`
 ## Performance
 
 ```ignore
-validate isin           time:   [20.908 ns 20.971 ns 21.040 ns]
-validate visa           time:   [17.241 ns 17.289 ns 17.341 ns]
+validate isin           time:   [13.136 ns 13.181 ns 13.230 ns]
+validate visa           time:   [13.523 ns 13.572 ns 13.627 ns]
 ```
