@@ -1,3 +1,6 @@
+# 1.0.3
+- optimize `valid` and `checksum`
+
 # 1.0.2
 - one symbol at a time API
 
