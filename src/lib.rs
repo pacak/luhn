@@ -47,11 +47,7 @@ impl Mixer {
             self.0.five_or_higher += 1;
         }
         self.0.sum += usize::from(digit);
-
-        // swap blobs
-        let t = self.0;
-        self.0 = self.1;
-        self.1 = t;
+        core::mem::swap(&mut self.0, &mut self.1);
     }
 
     pub fn valid(&self) -> bool {
