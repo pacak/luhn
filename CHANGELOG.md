@@ -1,3 +1,7 @@
+# 1.0.4
+- change to rust 2021 edition
+- vectorized implementation for valid and checksum
+
 # 1.0.3
 - optimize `valid` and `checksum`
 
