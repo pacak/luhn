@@ -6,7 +6,7 @@ authors = [
   "Michael Baykov <manpacket@gmail.com>",
 ]
 license = "MIT"
-edition = "2018"
+edition = "2021"
 repository = "https://github.com/pacak/luhn"
 readme = "README.md"
 keywords = ["checksum", "luhn", "no_std"]
