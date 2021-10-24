@@ -56,7 +56,11 @@ Crate doesn't use `std`
 
 ## Performance
 
+Library contains scalar implementations for both decimal and alhpanumeric inputs and vectorized
+implementation for decimal inputs.
+
 ```ignore
 validate isin           time:   [13.136 ns 13.181 ns 13.230 ns]
 validate visa           time:   [13.523 ns 13.572 ns 13.627 ns]
+validate visa vec       time:   [6.6799 ns 6.7189 ns 6.7671 ns]
 ```

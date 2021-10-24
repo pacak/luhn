@@ -14,5 +14,17 @@ fn bench_valid_visa(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_valid_isin, bench_valid_visa);
+fn bench_valid_visa_vec(c: &mut Criterion) {
+    let visa = b"4111111111111111";
+    c.bench_function("validate visa vec", |b| {
+        b.iter(|| unsafe { luhn3::decimal::valid_vec(black_box(visa)) })
+    });
+}
+
+criterion_group!(
+    benches,
+    bench_valid_isin,
+    bench_valid_visa,
+    bench_valid_visa_vec
+);
 criterion_main!(benches);
