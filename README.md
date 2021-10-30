@@ -19,7 +19,7 @@ Add `luhn3` under `[dependencies]` in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-luhn3 = "1.0"
+luhn3 = "1.1"
 ```
 
 Most of the CC numbers use Luhn checksum:

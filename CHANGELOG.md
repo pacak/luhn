@@ -1,3 +1,7 @@
+# 1.1.0
+- drop vectorized implementation
+- add swar implementation
+
 # 1.0.4
 - change to rust 2021 edition
 - vectorized implementation for valid and checksum
