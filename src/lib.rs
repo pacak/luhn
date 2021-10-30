@@ -66,93 +66,52 @@ struct Blob {
     five_or_higher: usize,
 }
 
-fn fold10(mut correct: bool, raw: &[u8]) -> Option<usize> {
-    const LUT: [u8; 10] = [0, 1, 2, 3, 4, 6, 7, 8, 9, 0];
-    let mut acc = 0;
-    for c in raw.iter().copied().rev() {
-        match c {
-            b'0'..=b'9' => {
-                let digit = (c - b'0') as usize;
-                acc += digit;
-                if correct {
-                    acc += LUT[digit] as usize;
-                }
-                correct = !correct;
-            }
-            _ => return None,
+#[inline(always)]
+fn copy_from_small_slice(buf: &mut [u8; 8], c: &[u8]) {
+    // we can do better than calling memcpy
+    match c.len() {
+        8 => *buf = <[u8; 8]>::try_from(c).unwrap(),
+        7 => buf[1..].copy_from_slice(&<[u8; 7]>::try_from(c).unwrap()),
+        6 => buf[2..].copy_from_slice(&<[u8; 6]>::try_from(c).unwrap()),
+        5 => buf[3..].copy_from_slice(&<[u8; 5]>::try_from(c).unwrap()),
+        4 => buf[4..].copy_from_slice(&<[u8; 4]>::try_from(c).unwrap()),
+        3 => buf[5..].copy_from_slice(&<[u8; 3]>::try_from(c).unwrap()),
+        2 => buf[6..].copy_from_slice(&<[u8; 2]>::try_from(c).unwrap()),
+        1 => buf[7..].copy_from_slice(&<[u8; 1]>::try_from(c).unwrap()),
+        _ => unreachable!(),
+    }
+}
+
+#[inline(always)]
+fn fold10_swar(mask1: u64, mask2: u64, raw: &[u8]) -> Option<u64> {
+    let mut sum = 0;
+
+    for c in raw.rchunks(8) {
+        let mut buf = [b'0'; 8];
+        copy_from_small_slice(&mut buf, c);
+
+        let mut v = u64::from_le_bytes(buf);
+        // try to overflow value up
+        let a = v.wrapping_add(0x4646464646464646);
+        // and down
+        v = v.wrapping_sub(0x3030303030303030);
+        // if either direction overflows - there are non 0..9 digits so
+        // checksum can't possibly be valid, otherwise all the values are digits
+        if (a | v) & 0x8080808080808080 == 0 {
+            // Calculate number of digits above 5 located at positions that would double
+            // Doubling them would result to values above 9 which will necessitate subtracting
+            // 9. But in mod 10 arithmetic -9 and +1 is the same so simply adding
+            // count of such digits is enough
+            sum += u64::from((mask2.wrapping_sub(v) & 0x8080808080808080).count_ones());
+            sum += v.wrapping_mul(mask1) >> 56;
+        } else {
+            return None;
         }
     }
-    Some(acc)
+    Some(sum)
 }
 
-/// # Safety
-///
-/// Sepends on sse2/ssse3 features being enabled
-#[target_feature(enable = "sse2,ssse3")]
-unsafe fn fold10v(mask: u16, raw: &[u8]) -> Option<usize> {
-    use core::arch::x86_64::*;
-    use core::intrinsics::transmute;
-
-    const LUT: [u8; 16] = [0, 2, 4, 6, 8, 1, 3, 5, 7, 9, 0, 0, 0, 0, 0, 0];
-    let mut acc = 0;
-    let mut valid = true;
-    let lut = transmute::<[u8; 16], __m128i>(LUT);
-    for chunk in raw.rchunks(16) {
-        // buffer will be used as xmm register
-        let mut buf = [b'0'; 16];
-
-        // fill in buffer with the next 16 bytes or less, if chunk is
-        // smaller than 16 bytes - remaining fields are filled with
-        // ascii zeros since they don't affect the result
-        let l = chunk.len();
-        buf[0..l].copy_from_slice(chunk);
-
-        // every other digit starting from the right most one needs
-        // to be doubled for that function computes both variants
-        // and picks one using ..ff00ff00 or ..00ff00ff mask
-        let d: u16 = mask.rotate_left((l as u32 & 1) * 8);
-        let mask = _mm_set1_epi16(d as i16);
-
-        // transmute buffer into xmm register
-        let ascii_digits = transmute::<[u8; 16], __m128i>(buf);
-
-        // easiest way to check if all values are digits
-        // are valid is to shift valid range all the way to the lower bound
-        // and confirm that all of them are less than 10 away from the limit
-        let offset = _mm_set1_epi8((b'0' + 128) as i8);
-        let shifted_digits = _mm_sub_epi8(ascii_digits, offset);
-        let high_bound = _mm_set1_epi8(-128 + 10);
-
-        // all 16 digits must be valid for decimal luhn code to exist
-        let digits_mask = _mm_movemask_epi8(_mm_cmpgt_epi8(high_bound, shifted_digits));
-        valid &= digits_mask == 65535;
-
-        // next two sets of results - for even and odd positions are required
-        // for one set function will use ascii values as is
-        let zero_digits = _mm_set1_epi8('0' as i8);
-        let digits = _mm_sub_epi8(ascii_digits, zero_digits);
-
-        // for the other set those digits will be transformed
-        // by "multiply by 2, subtract 9 if greater than 9" algorithm using
-        // precomputed lookup table
-        let sums = _mm_shuffle_epi8(lut, digits);
-
-        // select only correct digits using mask
-        let s1 = _mm_and_si128(mask, sums);
-        let s2 = _mm_andnot_si128(mask, digits);
-
-        // and add them all together
-        let s = _mm_sad_epu8(s1, s2);
-        let buf2 = transmute::<__m128i, [u16; 8]>(s);
-        acc += usize::from(buf2[0] + buf2[4]);
-    }
-    if valid {
-        Some(acc)
-    } else {
-        None
-    }
-}
-
+#[inline(always)]
 fn fold36(mut correct: bool, raw: &[u8]) -> Option<usize> {
     const LUT_DIGIT: [u8; 10] = [0, 1, 2, 3, 4, 6, 7, 8, 9, 0];
     const LUT_LETTER_T: [u8; 26] = [
@@ -229,21 +188,39 @@ pub mod decimal {
     /// assert!(!valid(noms.as_bytes()));
     /// ```
     pub fn valid(ascii: &[u8]) -> bool {
-        match fold10(false, ascii) {
-            Some(v) => v % 10 == 0,
+        match fold10_swar(0x0201020102010201, 0x7f047f047f047f04, ascii) {
+            Some(d) => d % 10 == 0,
             None => false,
         }
     }
 
-    #[target_feature(enable = "sse2,ssse3")]
-    /// Vectorized version of [valid]
+    /// Validate a check digit using Luhn algorithm with input given as an array
     ///
-    /// # Safety
+    /// Takes a slice of ASCII bytes and checks if the last byte is a valid Luhn checksum digit.
+    /// Will return `false` if checksum digit valid but input is not a decimal only - for example
+    /// an ISIN code. It is safe to pass non ASCII sequences of bytes.
     ///
-    /// Sepends on sse2/ssse3 features being enabled
-    pub unsafe fn valid_vec(ascii: &[u8]) -> bool {
-        match fold10v(0xff, ascii) {
-            Some(v) => v % 10 == 0,
+    /// Results are identical to those of [valid] but compiler can optimize this version better
+    ///
+    ///
+    /// # Usage
+    ///
+    /// ```
+    /// use luhn3::decimal::valid_arr;
+    ///
+    /// // test Visa card is valid
+    /// assert!(valid_arr(b"4012888888881881"));
+    ///
+    /// // Microsoft's ISIN contains a valid checksum but it's
+    /// // not a decimal
+    /// assert!(!valid_arr(b"US5949181045"));
+    ///
+    /// // Not a valid sequence
+    /// assert!(!valid_arr(b"banana"));
+    /// ```
+    pub fn valid_arr<const W: usize>(ascii: &[u8; W]) -> bool {
+        match fold10_swar(0x0201020102010201, 0x7f047f047f047f04, ascii) {
+            Some(d) => d % 10 == 0,
             None => false,
         }
     }
@@ -271,18 +248,7 @@ pub mod decimal {
     /// assert_eq!(None, checksum(noms.as_bytes()));
     /// ```
     pub fn checksum(ascii: &[u8]) -> Option<u8> {
-        let sum = fold10(true, ascii)?;
-        Some(b'0' + ((10 - (sum % 10)) % 10) as u8)
-    }
-
-    #[target_feature(enable = "sse2,ssse3")]
-    /// Vectorized version of [checksum]
-    ///
-    /// # Safety
-    ///
-    /// Sepends on sse2/ssse3 features being enabled
-    pub unsafe fn checksum_vec(ascii: &[u8]) -> Option<u8> {
-        let sum = fold10v(0xff00, ascii)?;
+        let sum = fold10_swar(0x0102010201020102, 0x047f047f047f047f, ascii)?;
         Some(b'0' + ((10 - (sum % 10)) % 10) as u8)
     }
 }
@@ -319,6 +285,30 @@ pub mod alphanum {
     /// assert!(!valid(noms.as_bytes()));
     /// ```
     pub fn valid(ascii: &[u8]) -> bool {
+        match fold36(false, ascii) {
+            Some(v) => v % 10 == 0,
+            None => false,
+        }
+    }
+
+    /// Validate a check digit using Luhn algorithm
+    ///
+    /// Results are identical to those of [valid] but compiler can optimize this version better
+    /// ```
+    /// use luhn3::alphanum::valid;
+    ///
+    /// // Microsoft's ISIN is valid
+    /// assert!(valid(b"US5949181045"));
+    ///
+    /// // Not a valid sequence
+    /// let banana = String::from("banana");
+    /// assert!(!valid(banana.as_bytes()));
+    ///
+    /// // Even less valid sequence
+    /// let noms = "口水鸡";
+    /// assert!(!valid(noms.as_bytes()));
+    /// ```
+    pub fn valid_arr<const T: usize>(ascii: &[u8; T]) -> bool {
         match fold36(false, ascii) {
             Some(v) => v % 10 == 0,
             None => false,
@@ -423,41 +413,6 @@ mod test {
             let mut s = Vec::from(*sample);
             s[3] = b'x';
             assert!(!crate::decimal::valid(&s));
-        }
-    }
-
-    #[test]
-    fn test_decimal_luhn_checksum_vec() {
-        if !(std::is_x86_feature_detected!("sse2") && std::is_x86_feature_detected!("ssse3")) {
-            return;
-        }
-
-        unsafe {
-            for sample in DECIMAL_LUHN_SAMPLES {
-                // number is valid as is valid
-                assert!(crate::decimal::valid_vec(sample.as_bytes()));
-
-                // luhn checksum detects a single changed digit
-                let mut s = Vec::from(*sample);
-                s[3] = change_digit(s[3]);
-                assert!(!crate::decimal::valid_vec(&s));
-
-                // luhn checksum also detects two digit swap
-                let mut s = Vec::from(*sample);
-                if s[3] != s[4] {
-                    s.swap(3, 4);
-                    assert!(!crate::decimal::valid_vec(&s));
-                }
-
-                // last digit is it's luhn checksum
-                let (checksum, body) = sample.as_bytes().split_last().unwrap();
-                assert_eq!(Some(*checksum), crate::decimal::checksum_vec(body));
-
-                // and finally only decimal numbers are accepted
-                let mut s = Vec::from(*sample);
-                s[3] = b'x';
-                assert!(!crate::decimal::valid_vec(&s));
-            }
         }
     }
 
