@@ -62,7 +62,7 @@ The only difference is that compiler can optimize operations on array better so 
 are slightly faster.
 
 
-```ignore
+```txt
 validate isin           time:   [13.136 ns 13.181 ns 13.230 ns]
 validate isin arr       time:   [9.5167 ns 9.5647 ns 9.6168 ns]
 validate visa           time:   [8.3910 ns 8.4963 ns 8.6302 ns]
